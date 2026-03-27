@@ -1,97 +1,95 @@
-from fastapi import FastAPI, HTTPException
-import yaml
-import subprocess
-
-from .models import Action, Observation, Reward
+import os
+import json
+from openai import OpenAI
+from pydantic import ValidationError
 from .environment import CloudSecEnv
+from .models import Action
 
-app = FastAPI(title="CloudSec SRE Environment API")
-env = CloudSecEnv()
+def run_baseline():
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        print("ERROR: OPENAI_API_KEY environment variable not found.")
+        return
 
-def get_manifest():
-    with open("openenv.yaml", "r") as f:
-        return yaml.safe_load(f)
-
-@app.get("/")
-def health_check():
-    return {"status": "ok", "message": "CloudSec SRE Environment is running."}
-
-@app.post("/reset", response_model=Observation)
-def reset_environment(task_id: str = "easy_brute_force"):
-    try:
-        env.set_task(task_id)
-        return env.reset()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.get("/state", response_model=Observation)
-def get_current_state():
-    if not env.state_data:
-        raise HTTPException(status_code=400, detail="Environment not initialized. Call /reset first.")
-    return env.state()
-
-@app.post("/step")
-def take_step(action: Action):
-    if not env.state_data:
-        raise HTTPException(status_code=400, detail="Environment not initialized.")
+    client = OpenAI(
+        base_url="https://api.groq.com/openai/v1", 
+        api_key=api_key
+    )
+    env = CloudSecEnv()
     
-    obs, reward, done, info = env.step(action)
-    return {
-        "observation": obs.model_dump(),
-        "reward": reward.model_dump(),
-        "done": done,
-        "info": info
-    }
+    tasks = ["easy_brute_force", "medium_lateral_movement", "hard_insider_threat"]
+    results = {}
 
-@app.get("/tasks")
-def list_tasks():
-    manifest = get_manifest()
-    return {
-        "tasks": manifest.get("tasks", []),
-        "action_schema": Action.model_json_schema()
-    }
+    print("Starting OpenEnv Agentic Baseline Evaluation...\n")
 
-@app.get("/grader")
-def get_grader_score():
-    if not env.state_data:
-        return {"score": 0.0, "message": "Environment not initialized."}
-    
-    score = 0.0
-    # The presence of the specific task alert determines failure
-    alert_ids = [a.alert_id for a in env.state_data.active_alerts]
-    
-    if env.current_task_id == "easy_brute_force" and "ALT-001" not in alert_ids:
-        score = 1.0
-    elif env.current_task_id == "medium_lateral_movement" and "ALT-002" not in alert_ids:
-        score = 1.0
-    elif env.current_task_id == "hard_insider_threat" and "ALT-003" not in alert_ids:
-        score = 1.0
-    
-    return {"score": score, "task_id": env.current_task_id}
-
-# Bulletproof JSON Baseline Return
-@app.post("/baseline")
-def trigger_baseline():
-    try:
-        result = subprocess.run(
-            ["python", "-m", "src.baseline"], 
-            capture_output=True, text=True, check=True
-        )
+    for task in tasks:
+        print(f"RUNNING TASK: {task}")
         
-        # Parse the stdout to extract scores safely into JSON
-        scores = {}
-        for line in result.stdout.split("\n"):
-            if "easy_brute_force" in line and "/" in line and ":" in line:
-                scores["easy_brute_force"] = float(line.split(":")[1].split("/")[0].strip())
-            elif "medium_lateral_movement" in line and "/" in line and ":" in line:
-                scores["medium_lateral_movement"] = float(line.split(":")[1].split("/")[0].strip())
-            elif "hard_insider_threat" in line and "/" in line and ":" in line:
-                scores["hard_insider_threat"] = float(line.split(":")[1].split("/")[0].strip())
+        env.set_task(task)
+        obs = env.reset()
+        done = False
+        
+        while not done:
+            system_prompt = (
+                "You are an autonomous Cloud Security Site Reliability Engineer (SRE). "
+                "Your objective is to resolve security incidents based on the active alerts and system state. "
+                "CRITICAL: You MUST respond ONLY with a valid JSON object matching the provided schema. "
+                "Do not include markdown blocks or extra text."
+            )
+            
+            user_prompt = (
+                f"ACTION SCHEMA:\n{json.dumps(Action.model_json_schema(), indent=2)}\n\n"
+                f"CURRENT ENVIRONMENT STATE:\n{obs.model_dump_json(indent=2)}\n\n"
+                "Based on the alerts and state, what is your next action?"
+            )
 
-        return {
-            "status": "success",
-            "scores": scores,
-            "raw_logs": result.stdout
-        }
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"Baseline script failed: {e.stderr}")
+            try:
+                response = client.chat.completions.create(
+                    model="llama-3.1-8b-instant",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    response_format={ "type": "json_object" }, 
+                    temperature=0.0 
+                )
+                
+                llm_output = response.choices[0].message.content
+                
+                action = Action.model_validate_json(llm_output)
+                print(f"Agent Action: {action.action_type.value} -> Target: {action.target}")
+                print(f"Justification: {action.justification}")
+                
+                obs, reward, done, info = env.step(action)
+                print(f"Step Reward: {reward.value} | System Message: {reward.message}\n")
+                
+            except ValidationError as e:
+                print(f"Schema Validation Error (Agent Hallucinated): {e}")
+                break
+            except Exception as e:
+                print(f"API or Execution Error: {e}")
+                break
+        
+        final_score = 0.0
+        if task == "easy_brute_force" and "198.51.100.44" in env.state_data.blocked_ips:
+            final_score = 1.0
+        elif task == "medium_lateral_movement" and "frontend-web-pod-2" in env.state_data.isolated_services:
+            final_score = 1.0
+        elif task == "hard_insider_threat" and "iam-role-billing-service" in env.state_data.revoked_roles:
+            final_score = 1.0
+            
+        results[task] = final_score
+        print(f"Task {task} Finished. Final Score: {final_score}\n")
+
+    print("BASELINE RESULTS SUMMARY")
+    print("-" * 30)
+    for t, s in results.items():
+        print(f"{t.ljust(25)} : {s}/1.0")
+    print("-" * 30)
+
+    # Save results to a file so the API can read them reliably
+    with open("baseline_results.json", "w") as f:
+        json.dump(results, f)
+
+if __name__ == "__main__":
+    run_baseline()
