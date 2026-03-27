@@ -1,32 +1,24 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException
 import yaml
-import os
 import subprocess
+import os
 
 from .models import Action, Observation, Reward
 from .environment import CloudSecEnv
 
-# Initialize the FastAPI app and our core environment
 app = FastAPI(title="CloudSec SRE Environment API")
 env = CloudSecEnv()
 
-# Helper function to read the manifest
 def get_manifest():
     with open("openenv.yaml", "r") as f:
         return yaml.safe_load(f)
 
-
-# STANDARD OPENENV ENDPOINTS
-
 @app.get("/")
 def health_check():
-    """Automated ping to the Space URL — must return 200"""
     return {"status": "ok", "message": "CloudSec SRE Environment is running."}
 
 @app.post("/reset", response_model=Observation)
 def reset_environment(task_id: str = "easy_brute_force"):
-    """Resets the environment for a specific task."""
     try:
         env.set_task(task_id)
         return env.reset()
@@ -35,14 +27,12 @@ def reset_environment(task_id: str = "easy_brute_force"):
 
 @app.get("/state", response_model=Observation)
 def get_current_state():
-    """Returns the current state without taking an action."""
     if not env.state_data:
-        raise HTTPException(status_code=400, detail="Environment not initialized. Call /reset first.")
+        raise HTTPException(status_code=400, detail="Environment not initialized.")
     return env.state()
 
 @app.post("/step")
 def take_step(action: Action):
-    """Executes an action and returns the new state and reward."""
     if not env.state_data:
         raise HTTPException(status_code=400, detail="Environment not initialized.")
     
@@ -54,13 +44,8 @@ def take_step(action: Action):
         "info": info
     }
 
-
-# CUSTOM ENDPOINTS
-
-
 @app.get("/tasks")
 def list_tasks():
-    """Returns list of tasks and the action schema."""
     manifest = get_manifest()
     return {
         "tasks": manifest.get("tasks", []),
@@ -69,31 +54,45 @@ def list_tasks():
 
 @app.get("/grader")
 def get_grader_score():
-    """Returns grader score after an episode is completed."""
-    # To determine the final score, we evaluate the current state
     if not env.state_data:
         return {"score": 0.0, "message": "Environment not initialized."}
     
     score = 0.0
-    if env.current_task_id == "easy_brute_force" and not env.state_data.active_alerts:
+    alert_ids = [a.alert_id for a in env.state_data.active_alerts]
+    
+    if env.current_task_id == "easy_brute_force" and "ALT-001" not in alert_ids:
         score = 1.0
-    elif env.current_task_id == "medium_lateral_movement" and not env.state_data.active_alerts:
+    elif env.current_task_id == "medium_lateral_movement" and "ALT-002" not in alert_ids:
         score = 1.0
-    # (Hard task logic applies here)
+    elif env.current_task_id == "hard_insider_threat" and "ALT-003" not in alert_ids:
+        score = 1.0
     
     return {"score": score, "task_id": env.current_task_id}
 
 @app.post("/baseline")
 def trigger_baseline():
-    """Triggers inference script and returns baseline score for all 3 tasks."""
-    # We use subprocess to run the baseline.py script asynchronously or wait for it
+    if "OPENAI_API_KEY" not in os.environ:
+        return {"status": "error", "message": "OPENAI_API_KEY secret is missing in Hugging Face settings."}
+        
     try:
-        # Note: In a real deployment, you'd want to handle this asynchronously 
-        # so the HTTP request doesn't time out, but for the hackathon spec, blocking is usually expected.
         result = subprocess.run(
             ["python", "-m", "src.baseline"], 
             capture_output=True, text=True, check=True
         )
-        return {"status": "success", "output": result.stdout}
+        
+        scores = {}
+        for line in result.stdout.split("\n"):
+            if "easy_brute_force" in line and "/" in line and ":" in line:
+                scores["easy_brute_force"] = float(line.split(":")[1].split("/")[0].strip())
+            elif "medium_lateral_movement" in line and "/" in line and ":" in line:
+                scores["medium_lateral_movement"] = float(line.split(":")[1].split("/")[0].strip())
+            elif "hard_insider_threat" in line and "/" in line and ":" in line:
+                scores["hard_insider_threat"] = float(line.split(":")[1].split("/")[0].strip())
+
+        return {
+            "status": "success",
+            "scores": scores,
+            "raw_logs": result.stdout
+        }
     except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"Baseline script failed: {e.stderr}")
+        return {"status": "error", "message": "Baseline script crashed.", "details": e.stderr}
