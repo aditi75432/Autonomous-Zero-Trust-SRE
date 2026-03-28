@@ -1,19 +1,4 @@
----
-title: Autonomous Zero Trust SRE
-colorFrom: blue
-colorTo: indigo
-sdk: docker
-pinned: false
-tags:
-- openenv
-emoji: 💻
----
-
-
 # Autonomous Zero-Trust SRE Agent (OpenEnv)
-
-[](https://www.google.com/search?q=https://github.com/openenv/spec)
-[](https://www.google.com/search?q=https://huggingface.co/spaces/aditi75432/autonomous-zero-trust-sre)
 
 
 ### 1. The Problem Statement & The Need (Why it matters)
