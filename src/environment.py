@@ -8,6 +8,7 @@ class CloudSecEnv:
         self.step_count = 0
         self.max_steps = 10
         self.logs_investigated = False
+        self.final_score = 0.0
 
     def set_task(self, task_id: str):
         self.current_task_id = task_id
@@ -16,16 +17,11 @@ class CloudSecEnv:
     def reset(self) -> Observation:
         self.step_count = 0
         self.logs_investigated = False
+        self.final_score = 0.0
         
-        # Injecting Enterprise Noise (Distractors)
         self.state_data = Observation(
             active_alerts=[
-                Alert(
-                    alert_id="ALT-000", 
-                    severity=Severity.LOW, 
-                    description="Routine CPU spike detected on image-processor pod", 
-                    target_service="image-processor"
-                )
+                Alert(alert_id="ALT-000", severity=Severity.LOW, description="Routine CPU spike detected on image-processor pod", target_service="image-processor")
             ],
             blocked_ips=[],
             isolated_services=[],
@@ -64,61 +60,79 @@ class CloudSecEnv:
         self.step_count += 1
         done = False
         reward_val = 0.0
-        msg = "Action processed. No immediate threat resolved."
+        msg = f"Step {self.step_count}: Action processed."
         
-        # EASY TASK GRADER
+        # --- DYNAMIC UPGRADE 1: Temporal Escalation ---
+        if self.step_count == 3:
+            for alert in self.state_data.active_alerts:
+                if alert.severity == Severity.HIGH:
+                    alert.severity = Severity.CRITICAL
+                    msg += " [SYSTEM ALERT: Threat escalated to CRITICAL due to delayed response!]"
+
+        # --- DYNAMIC UPGRADE 2: Infrastructure Cascading Failures ---
+        if action.action_type == ActionType.ISOLATE_MICROSERVICE:
+            self.state_data.isolated_services.append(action.target)
+            if action.target == "auth-service":
+                self.state_data.service_health["frontend-web"] = ServiceStatus.DEGRADED
+                self.state_data.service_health["payment-gateway"] = ServiceStatus.DEGRADED
+                msg += " [CASCADE ALARM: Isolating auth-service has degraded frontend and payment systems.]"
+
+        # --- DYNAMIC UPGRADE 3: Multi-Factor Scoring Grader ---
+        efficiency_bonus = max(0.0, (self.max_steps - self.step_count) / self.max_steps * 0.2)
+        
+        # EASY TASK
         if self.current_task_id == "easy_brute_force":
             if action.action_type == ActionType.BLOCK_IP and action.target == "198.51.100.44":
                 self.state_data.blocked_ips.append(action.target)
                 self.state_data.active_alerts = [a for a in self.state_data.active_alerts if a.alert_id != "ALT-001"]
-                reward_val = 1.0
-                msg = "Success: Malicious IP blocked."
+                reward_val = 0.8 + efficiency_bonus
+                msg += f" Threat neutralized. Efficiency Bonus: +{efficiency_bonus:.2f}"
+                self.final_score = round(reward_val, 2)
                 done = True
             elif action.action_type == ActionType.BLOCK_IP:
-                reward_val = -0.5 
-                msg = "Penalty: Blocked an incorrect IP."
+                reward_val = -0.2 
+                msg += " Wrong IP blocked. Collateral damage incurred."
 
-        # MEDIUM TASK GRADER
+        # MEDIUM TASK
         elif self.current_task_id == "medium_lateral_movement":
             if action.action_type == ActionType.ISOLATE_MICROSERVICE and action.target == "frontend-web-pod-2":
-                self.state_data.isolated_services.append(action.target)
                 self.state_data.active_alerts = [a for a in self.state_data.active_alerts if a.alert_id != "ALT-002"]
-                reward_val = 1.0
-                msg = "Success: Compromised pod isolated. Database safe."
+                reward_val = 0.8 + efficiency_bonus
+                msg += " Compromised pod isolated. DB secure."
+                self.final_score = round(reward_val, 2)
                 done = True
             elif action.target == "hr-database":
+                self.state_data.service_health["hr-database"] = ServiceStatus.OFFLINE
                 reward_val = -1.0 
-                msg = "Critical Failure: You took down the HR database!"
+                self.final_score = 0.0
+                msg += " CRITICAL FAILURE: HR Database isolated! Global outage."
                 done = True
                 
-        # HARD TASK GRADER (Multi-Step Trajectory Requirement)
+        # HARD TASK
         elif self.current_task_id == "hard_insider_threat":
             if action.action_type == ActionType.QUERY_LOGS:
                 self.logs_investigated = True
                 reward_val = 0.2
-                msg = "Logs queried. Evidence of compromised iam-role-billing-service found."
+                msg += " Logs queried. Audit trail established."
                 
             elif action.action_type == ActionType.REVOKE_IAM_ROLE and action.target == "iam-role-billing-service":
                 if self.logs_investigated:
                     self.state_data.revoked_roles.append(action.target)
                     self.state_data.active_alerts = [a for a in self.state_data.active_alerts if a.alert_id != "ALT-003"]
-                    reward_val = 1.0
-                    msg = "Success: Role revoked after proper investigation. Exfiltration stopped."
+                    reward_val = 0.8 + efficiency_bonus
+                    msg += " IAM Role safely revoked based on audit logs."
+                    self.final_score = round(reward_val, 2)
                     done = True
                 else:
                     reward_val = -1.0
-                    msg = "Critical Failure: You blindly revoked a production IAM role without querying the logs first!"
+                    self.final_score = 0.0
+                    msg += " CRITICAL COMPLIANCE FAILURE: Blind role revocation without log analysis."
                     done = True
-                    
-            elif action.action_type == ActionType.ISOLATE_MICROSERVICE and action.target == "payment-gateway":
-                self.state_data.service_health["payment-gateway"] = ServiceStatus.OFFLINE
-                reward_val = -1.0
-                msg = "Critical Failure: You isolated the payment gateway, causing a global system outage!"
-                done = True
 
         if self.step_count >= self.max_steps and not done:
             done = True
-            msg = "Episode terminated: Max steps reached. Incident unresolved."
+            self.final_score = 0.0
+            msg += " Episode terminated: Max steps reached."
 
         reward = Reward(value=reward_val, message=msg)
         return self.state_data, reward, done, {"step_count": self.step_count}
