@@ -1,20 +1,6 @@
----
-title: Autonomous Zero Trust SRE
-colorFrom: blue
-colorTo: indigo
-sdk: docker
-pinned: false
-tags:
-- openenv
-
----
 
 # Autonomous Zero-Trust SRE Agent (OpenEnv)
 
-[](https://www.google.com/search?q=https://github.com/openenv/spec)
-[](https://www.google.com/search?q=https://huggingface.co/spaces/aditi75432/autonomous-zero-trust-sre)
-
-## 1\. Executive Summary
 
 **The Problem:** Modern enterprise cloud environments run on hundreds of interconnected microservices. When a cyberattack occurs, Level 1 Security Operations Center (SOC) analysts and Site Reliability Engineers (SREs) suffer from massive "alert fatigue." They must sift through thousands of false positives to find the real threat. If an analyst panics and shuts down the wrong database while trying to stop a hacker, they cause a self-inflicted global production outage.
 
