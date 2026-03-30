@@ -4,9 +4,9 @@ import time
 from openai import OpenAI
 from pydantic import ValidationError
 
-# Imports updated because this file is now at the root
-from src.environment import CloudSecEnv
-from src.models import Action
+
+from server.environment import CloudSecEnv
+from server.models import Action
 
 def run_baseline():
     api_key = os.environ.get("OPENAI_API_KEY")
