@@ -12,4 +12,4 @@ tasks:
   - id: "hard_insider_threat"
     difficulty: "hard"
     description: "Detect the anomalous data exfiltration, identify the compromised IAM role, and revoke it while maintaining 99% service uptime for legitimate traffic."
-entrypoint: "src.environment:CloudSecEnv"
+entrypoint: "server.environment:CloudSecEnv"
