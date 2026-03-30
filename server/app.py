@@ -76,11 +76,11 @@ def get_grader_score():
 
 @app.post("/baseline")
 def trigger_baseline():
-    if "OPENAI_API_KEY" not in os.environ:
-        return {"status": "error", "message": "OPENAI_API_KEY secret missing."}
+    # Allow the run if EITHER orginal key OR the hackathon bot's key is present
+    if "OPENAI_API_KEY" not in os.environ and "HF_TOKEN" not in os.environ:
+        return {"status": "error", "message": "Missing API token (HF_TOKEN or OPENAI_API_KEY)."}
         
     try:
-        # Trigger the root inference script
         subprocess.run(["python", "-u", "inference.py"], check=True)
         
         if os.path.exists("baseline_results.json"):

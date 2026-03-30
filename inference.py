@@ -4,25 +4,33 @@ import time
 from openai import OpenAI
 from pydantic import ValidationError
 
-
 from server.environment import CloudSecEnv
 from server.models import Action
 
 def run_baseline():
-    api_key = os.environ.get("OPENAI_API_KEY")
+    # 1. DYNAMIC API KEY: Checks for Phase 2 HF_TOKEN first, falls back to your OPENAI_API_KEY
+    api_key = os.environ.get("HF_TOKEN") or os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        print("ERROR: OPENAI_API_KEY environment variable not found.")
+        print("ERROR: Neither HF_TOKEN nor OPENAI_API_KEY environment variables found.")
         return
 
+    # 2. DYNAMIC BASE URL: Checks for Phase 2 URL, falls back to Groq
+    base_url = os.environ.get("API_BASE_URL", "https://api.groq.com/openai/v1")
+    
+    # 3. DYNAMIC MODEL: Checks for Phase 2 Nemotron/Llama model, falls back to orginal
+    model_name = os.environ.get("MODEL_NAME", "llama-3.1-8b-instant")
+
+    # The required OpenAI Client initialization
     client = OpenAI(
-        base_url="https://api.groq.com/openai/v1", 
+        base_url=base_url, 
         api_key=api_key
     )
     env = CloudSecEnv()
     tasks = ["easy_brute_force", "medium_lateral_movement", "hard_insider_threat"]
     results = {}
 
-    print("Starting OpenEnv Agentic Baseline Evaluation...\n")
+    print("Starting OpenEnv Agentic Baseline Evaluation...")
+    print(f"Injecting Agent: {model_name} via {base_url}\n")
 
     for task in tasks:
         print(f"RUNNING TASK: {task}")
@@ -44,8 +52,9 @@ def run_baseline():
             )
 
             try:
+                # 4. USING THE DYNAMIC MODEL NAME HERE
                 response = client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
+                    model=model_name,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
@@ -66,10 +75,7 @@ def run_baseline():
                 print(f"API Error: {e}")
                 break
         
-        # Pull the final calculated score from the environment state
         results[task] = env.final_score
-        
-        # Anti-Rate Limit Buffer for Groq API
         time.sleep(2) 
 
     with open("baseline_results.json", "w") as f:
