@@ -5,6 +5,7 @@ description = "Autonomous Zero-Trust SRE Agent Environment"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "openenv",      # <--- ADD THIS BACK IN!
     "fastapi",
     "uvicorn",
     "pydantic",
