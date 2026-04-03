@@ -1,26 +1,7 @@
-<<<<<<< HEAD
-<<<<<<< HEAD
-
 # Autonomous Zero-Trust SRE Agent (OpenEnv)
-
-=======
----
-title: Autonomous Zero Trust SRE
-colorFrom: blue
-colorTo: indigo
-sdk: docker
-pinned: false
-tags:
-- openenv
----
-
-# Autonomous Zero-Trust SRE Agent (OpenEnv)
-
-[![OpenEnv Compliant](https://img.shields.io/badge/OpenEnv-1.0-blue)](https://github.com/openenv/spec)
-[![Hugging Face Space](https://img.shields.io/badge/Hugging_Face-Space-blue)](https://huggingface.co/spaces/aditi75432/autonomous-zero-trust-sre)
 
 ## 1. Overview & Motivation
->>>>>>> 196b1145b2481deb39b763946e8761e3cac57fcb
+
 
 Modern enterprise cloud infrastructure operates on interconnected, Zero-Trust microservice architectures. When a security breach or severe misconfiguration occurs, Level 1 Security Operations Center (SOC) analysts and Site Reliability Engineers (SREs) are overwhelmed by "alert fatigue," forced to parse thousands of SIEM logs under extreme time pressure. 
 
