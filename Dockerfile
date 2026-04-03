@@ -5,10 +5,10 @@ WORKDIR /app
 # Install uv directly
 RUN pip install uv
 
-# Copy your dependency files first to cache the layer
-COPY pyproject.toml uv.lock ./
+# COPY README.md HERE to satisfy hatchling during the uv sync
+COPY pyproject.toml uv.lock README.md ./
 
-# Install dependencies using uv sync (this respects the lockfile)
+# Install dependencies using uv sync
 RUN uv sync --no-dev
 
 # Copy the rest of your environment code
