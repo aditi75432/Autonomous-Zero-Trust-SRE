@@ -67,6 +67,46 @@ The agent must reply with a typed command from a strict Enum list and provide a 
 }
 ```
 
+## Action Set and Reward Semantics
+
+To ensure deterministic evaluation and reproducible agent behavior, the environment exposes a fixed and interpretable action set representing realistic SRE remediation operations.
+
+### Available Actions
+
+Agents can execute the following remediation or investigation actions:
+
+* `block_ip` – Blocks a malicious external IP address.
+* `isolate_microservice` – Isolates a compromised service or pod to prevent further lateral movement.
+* `restart_pod` – Restarts a specific container/pod suspected of malicious activity.
+* `query_logs` – Retrieves additional system or security logs for investigation.
+* `revoke_iam_role` – Revokes a compromised or leaked IAM role.
+
+Each action must include a **justification string**, simulating enterprise audit logs where operators are required to document the reasoning behind every remediation decision.
+
+
+### Reward Design
+
+The reward function is designed to provide **continuous learning signals throughout the episode**, rather than rewarding only the final outcome.
+
+| Action Outcome                                                         | Reward     |
+| ---------------------------------------------------------------------- | ---------- |
+| Correct remediation action                                             | **≈ +1.0** |
+| Investigative action (`query_logs`)                                    | **+0.2**   |
+| Incorrect but non-destructive action                                   | **0.0**    |
+| Destructive or unsafe action (e.g., isolating critical infrastructure) | **≈ −1.0** |
+
+
+### Design Goals
+
+The reward structure encourages agents to:
+
+* Perform **evidence-based investigation before remediation**
+* Avoid actions that cause **system instability or service outages**
+* Maintain **audit-compliant reasoning** through justified decisions
+
+This design forces agents to balance **security response accuracy, infrastructure stability, and operational accountability**, closely mirroring the constraints faced by real-world Site Reliability Engineers operating in production environments.
+
+
 ## 5\. System Architecture & Data Flow
 
 The environment is built on a modular four-tier architecture designed for adversarial agent evaluation and seamless multi-mode deployment.
